@@ -1,5 +1,6 @@
+
 # Build the React frontend using Node.js.
-FROM node:18-alpine
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -7,12 +8,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
+# Accept the deployed backend URL.
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
 # Copy the frontend source files.
 COPY . .
-
-# Set the API address before Vite builds the application.
-ARG VITE_API_URL=http://localhost:5000
-ENV VITE_API_URL=${VITE_API_URL}
 
 # Create the production build.
 RUN npm run build
@@ -20,7 +21,7 @@ RUN npm run build
 # Serve the production files using nginx.
 FROM nginx:alpine
 
-COPY --from=0 /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
