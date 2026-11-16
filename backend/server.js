@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const db = require('./database');
@@ -7,94 +8,122 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-
+// Wait for the database to finish initializing before handling requests.
+app.use((req, res, next) => {
+  db.ready
+    .then(() => next())
+    .catch((err) => {
+      console.error('Database initialization failed:', err);
+      res.status(500).json({ error: 'Database initialization failed' });
+    });
+});
 // Get all recipes
 app.get('/api/recipes', (req, res) => {
-  db.all("SELECT * FROM recipes ORDER BY created_at DESC", (err, rows) => {
-    if (err) {
-      console.error('Error fetching recipes:', err);
-      res.status(500).json({ error: 'Failed to fetch recipes' });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
-// Get single recipe by ID
-app.get('/api/recipes/:id', (req, res) => {
-  const { id } = req.params;
-  db.get("SELECT * FROM recipes WHERE id = ?", [id], (err, row) => {
-    if (err) {
-      console.error('Error fetching recipe:', err);
-      res.status(500).json({ error: 'Failed to fetch recipe' });
-      return;
-    }
-    if (!row) {
-      res.status(404).json({ error: 'Recipe not found' });
-      return;
-    }
-    res.json(row);
-  });
-});
-
-// Create new recipe
-app.post('/api/recipes', (req, res) => {
-  const { name, ingredients, instructions, cookTime } = req.body;
-  
-  if (!name || !ingredients || !instructions || !cookTime) {
-    res.status(400).json({ error: 'All fields are required' });
-    return;
-  }
-
-  db.run(
-    "INSERT INTO recipes (name, ingredients, instructions, cookTime) VALUES (?, ?, ?, ?)",
-    [name, ingredients, instructions, cookTime],
-    function(err) {
+  db.all(
+    'SELECT * FROM recipes ORDER BY created_at DESC',
+    (err, rows) => {
       if (err) {
-        console.error('Error creating recipe:', err);
-        res.status(500).json({ error: 'Failed to create recipe' });
-        return;
+        console.error('Error fetching recipes:', err);
+        return res.status(500).json({ error: 'Failed to fetch recipes' });
       }
-      
-      db.get("SELECT * FROM recipes WHERE id = ?", [this.lastID], (err, row) => {
-        if (err) {
-          console.error('Error fetching created recipe:', err);
-          res.status(500).json({ error: 'Recipe created but failed to fetch' });
-          return;
-        }
-        res.status(201).json(row);
-      });
+
+      res.json(rows);
     }
   );
 });
 
-// Delete recipe
+// Get one recipe by ID
+app.get('/api/recipes/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.get('SELECT * FROM recipes WHERE id = ?', [id], (err, row) => {
+    if (err) {
+      console.error('Error fetching recipe:', err);
+      return res.status(500).json({ error: 'Failed to fetch recipe' });
+    }
+
+    if (!row) {
+      return res.status(404).json({ error: 'Recipe not found' });
+    }
+
+    res.json(row);
+  });
+});
+
+// Create a recipe
+app.post('/api/recipes', (req, res) => {
+  const { name, ingredients, instructions, cookTime } = req.body;
+
+  if (
+    !name?.trim() ||
+    !ingredients?.trim() ||
+    !instructions?.trim() ||
+    !cookTime?.trim()
+  ) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  db.run(
+    'INSERT INTO recipes (name, ingredients, instructions, cookTime) VALUES (?, ?, ?, ?)',
+    [name, ingredients, instructions, cookTime],
+    function (err) {
+      if (err) {
+        console.error('Error creating recipe:', err);
+        return res.status(500).json({ error: 'Failed to create recipe' });
+      }
+
+      db.get(
+        'SELECT * FROM recipes WHERE id = ?',
+        [this.lastID],
+        (fetchErr, row) => {
+          if (fetchErr) {
+            console.error('Error fetching created recipe:', fetchErr);
+            return res.status(500).json({
+              error: 'Recipe created but failed to fetch'
+            });
+          }
+
+          res.status(201).json(row);
+        }
+      );
+    }
+  );
+});
+
+// Delete a recipe
 app.delete('/api/recipes/:id', (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM recipes WHERE id = ?", [id], function(err) {
+
+  db.run('DELETE FROM recipes WHERE id = ?', [id], function (err) {
     if (err) {
       console.error('Error deleting recipe:', err);
-      res.status(500).json({ error: 'Failed to delete recipe' });
-      return;
+      return res.status(500).json({ error: 'Failed to delete recipe' });
     }
+
     if (this.changes === 0) {
-      res.status(404).json({ error: 'Recipe not found' });
-      return;
+      return res.status(404).json({ error: 'Recipe not found' });
     }
-    res.json({ message: 'Recipe deleted successfully' });
+
+    res.status(204).send();
   });
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
-    port: PORT 
+    port: PORT
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Recipe API server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-});
+// Only start the server when this file is run directly.
+// Tests can import the Express app without starting another server.
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Recipe API server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+  });
+}
+
+module.exports = app;
