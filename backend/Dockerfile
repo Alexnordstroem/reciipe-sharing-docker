@@ -13,6 +13,7 @@ COPY . .
 
 # Store the SQLite database in the persistent data directory.
 RUN mkdir -p /app/data \
+    && rm -f /app/recipes.db \
     && ln -s /app/data/recipes.db /app/recipes.db
 
 # Make the backend port available.
